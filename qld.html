@@ -8,9 +8,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<meta name="version" content="V0.21-261015-QLD-Lifetime-AutoOrder">
+<meta name="version" content="V0.22-261015-QLD-Lifetime-WeeklyOnce">
 <meta name="release-date" content="261015">
-<title>QLD 평생매수AI분석 (V0.21 - 261015)</title>
+<title>QLD 평생매수AI분석 (V0.22 - 261015)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
@@ -661,8 +661,8 @@
   </section>
   <a class="hub-link" href="./">🏠 허브로 · 홈 화면 앱 설치는 허브에서</a>
   <footer class="page-foot">
-  <button class="dl-btn" id="downloadSelfBtn" type="button">⬇ 이 파일 저장 (<span id="dlName">QLD평생매수AI분석_V0_21_261015.HTML</span>)</button>
-  <div style="margin-bottom:4px;">시스템 버전: <code id="footerVersion">V0.21 (261015)</code></div>
+  <button class="dl-btn" id="downloadSelfBtn" type="button">⬇ 이 파일 저장 (<span id="dlName">QLD평생매수AI분석_V0_22_261015.HTML</span>)</button>
+  <div style="margin-bottom:4px;">시스템 버전: <code id="footerVersion">V0.22 (261015)</code></div>
   </footer>
 
   </div>
@@ -935,7 +935,7 @@
 </nav>
 
 <script>
-const APP_VERSION = "V0.21";
+const APP_VERSION = "V0.22";
 const RELEASE_DATE = "261015";
 const FILE_NAME = `QLD평생매수AI분석_${APP_VERSION.replace(".", "_")}_${RELEASE_DATE}.HTML`;
 
@@ -961,7 +961,7 @@ const QQQ_FETCH_CANDLES = LOOKBACK_CANDLES + CCI_PERIOD;   // +1: 장중 미확�
   V0.15 변경 요약 (2026-09-29) — SOXL V0.58 · TQQQ V0.31 개선 사항을 평생매수 전략에 맞게 이식
   - 확정 종가만 사용: 미국 장중(뉴욕 16:15 이전)에는 진행 중인 오늘 봉을 제외 → LOC 기준가·자동 저장이 장중 가격에 흔들리지 않음
   - ⚡ 오늘의 LOC 주문 카드(맨 위): 매수가·수량을 누르면 숫자만 복사, 주간 예약일이면 🔔 알림, 자동주문 파일 저장(Termux 봇 연동)
-  - 매주 첫 거래일 LOC 체결 자동 저장: 마지막 기록 이후 매주 첫 거래일마다 '종가 ≤ LOC 매수가'였는지 재생해 체결분을 기록 (사유 표시)
+  - (V0.22: 주중 아무 날 · 주 1회로 변경) LOC 체결 자동 저장: 마지막 기록 이후 '종가 ≤ LOC 매수가'였는지 재생해 체결분을 기록 (사유 표시)
   - 나의 매수 기록: 날짜 기본값 = 어제(최근 확정 종가일), 수량 비우면 LOC 가이드 수량 자동, 표 균일 간격·검산 줄, 오늘 날짜는 종가 확정 전까지 '확정 대기'
   - 상단 탭에 ⚡오늘 추가
 
@@ -1614,12 +1614,13 @@ function trimmedMeanExcludingMinMax(values) {
 }
 
 /* ---------- QLD 평생 매수 전략 (매도 없음) ---------- */
-function findAccumulateBuys(hist, thresholdPct) {
-  let peak = hist[0].y;
+function findAccumulateBuys(hist, thresholdPct) {   // V0.22: 주중 아무 날이나 종가가 기준가 대비 −목표% 이하면 매수 · 주 1회까지
+  let peak = hist[0].y, lastWk = null;
   const buys = [];
   for (let i = 1; i < hist.length; i++) {
     if (hist[i].y > peak) { peak = hist[i].y; continue; }
-    if ((peak - hist[i].y) / peak * 100 >= thresholdPct) { buys.push({ x: hist[i].x, y: hist[i].y, i }); peak = hist[i].y; }
+    if (weekKey(hist[i].x) === lastWk) continue;
+    if ((peak - hist[i].y) / peak * 100 >= thresholdPct) { buys.push({ x: hist[i].x, y: hist[i].y, i }); peak = hist[i].y; lastWk = weekKey(hist[i].x); }
   }
   return buys;
 }
@@ -1838,7 +1839,7 @@ function renderGuideCard(hist, livePrice, cciHist, histLong) {
     acc: analyzeAccumulateStrategy(hist),        // 200봉 (백테스트 카드 비교용)
     ai: analyzeAiStrategy(long),                 // 400봉 워크포워드 (LOC 가이드용)
     sr: computeSrAnalysis(hist, livePrice) };
-  autoRecordWeeklyFills();                                  // 매주 첫 거래일 LOC 체결분 자동 저장
+  autoRecordWeeklyFills();                                  // 주 1회 LOC 체결분 자동 저장 (V0.22: 아무 요일)
   const dEl = document.getElementById("guideDate");
   if (dEl && dEl.dataset.autoDefault === "1") setDefaultGuideDate(true);
   renderGuideResult();
@@ -1943,7 +1944,7 @@ function updateGuideQtyHint() {
   q.placeholder = dq ? `비우면 ${dq.qty}주` : "비우면 자동";
 }
 
-/* 주간 예약일 = 각 주의 첫 거래일 (보통 월요일, 월요일 휴장이면 화요일) */
+/* 주 번호 (월요일 시작) — V0.22: 주 1회 매수 판정용 */
 function weekKey(x) { return Math.floor((Math.floor(x / 86400000) + 3) / 7); }   // 월요일 시작 주 번호
 function isWeekFirstSession(hist, i) { return i === 0 || weekKey(hist[i].x) !== weekKey(hist[i - 1].x); }
 function nextWeekday(fromX) { const d = new Date(fromX); do { d.setUTCDate(d.getUTCDate() + 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6); return d; }
@@ -1951,7 +1952,7 @@ function nextMonday(fromX) { const d = new Date(fromX); do { d.setUTCDate(d.getU
 const WEEK_KR = ["일", "월", "화", "수", "목", "금", "토"];
 const fmtMD = d => `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${WEEK_KR[d.getUTCDay()]})`;
 
-/* ---------- 매주 첫 거래일 LOC 체결 자동 저장 ----------
+/* ---------- 주 1회 LOC 체결 자동 저장 (V0.22: 주중 아무 날 · 그 주 첫 체결만) ----------
    마지막 매수 기록 다음 거래일부터 어제까지, '각 주의 첫 거래일'마다 그날 걸었을 LOC 매수가를 다시 계산해
    종가 ≤ 매수가였으면 체결로 보고 기록한다 (체결가 = 그날 종가).
    매수가 = floor(기준가 × (1 − 하락 목표))  ·  기준가 = max(직전 매수가, 그 이후 전날까지의 종가)  — LOC 가이드와 같은 식
@@ -1979,20 +1980,21 @@ function autoRecordWeeklyFills() {
   let refPeak = lastRec.price;
   for (let k = dates.indexOf(lastRec.date) + 1; k > 0 && k < start; k++) refPeak = Math.max(refPeak, hist[k].y);
   let qtyBase = lastRec.qty;
+  const boughtWk = new Set(valid.map(r => weekKey(r.t)));          // V0.22: 이미 산 주는 건너뜀 (주 1회)
   for (let i = start; i <= D; i++) {
-    if (!isWeekFirstSession(hist, i)) { refPeak = Math.max(refPeak, hist[i].y); continue; }
+    if (boughtWk.has(weekKey(hist[i].x))) { refPeak = Math.max(refPeak, hist[i].y); continue; }
     const trig = Math.max(0.01, Math.floor(refPeak * (1 - pct / 100) * 100) / 100);
     const tag = `${fmtCompactDate(hist[i].x)}(${WEEK_KR[new Date(hist[i].x).getUTCDay()]})`;
     if (skip.includes(dates[i])) { reason = `${tag} 자동 기록은 직접 지우셔서 다시 만들지 않습니다`; refPeak = Math.max(refPeak, hist[i].y); continue; }
-    if (hist[i].y > trig) { reason = `${tag} 종가 ${usd(hist[i].y)} > LOC 매수가 ${usd(trig)} → 미체결 (다음 예약일 재확인)`; refPeak = Math.max(refPeak, hist[i].y); continue; }
+    if (hist[i].y > trig) { reason = `${tag} 종가 ${usd(hist[i].y)} > LOC 매수가 ${usd(trig)} → 미체결 (이번 주 남은 날 계속)`; refPeak = Math.max(refPeak, hist[i].y); continue; }
     const qty = resolveLocQty(trig, qtyBase).qty;
     guideState.records.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: dates[i], qty, price: hist[i].y, auto: true });
     added.push(`${tag} ${qty}주 @ ${usd(hist[i].y)} (LOC ${usd(trig)} 이하)`);
-    refPeak = hist[i].y; qtyBase = qty; reason = "";
+    refPeak = hist[i].y; qtyBase = qty; reason = ""; boughtWk.add(weekKey(hist[i].x));
   }
-  if (added.length) { guideSaveState(); autoRecordMsg = `매주 첫 거래일 LOC 체결 → 자동 저장: ${added.join(", ")}. 실제로 체결되지 않았다면 ✕로 지워주세요.`; }
+  if (added.length) { guideSaveState(); autoRecordMsg = `주 1회 LOC 체결 → 자동 저장: ${added.join(", ")}. 실제로 체결되지 않았다면 ✕로 지워주세요.`; }
   if (reason) autoRecordInfo = "자동 저장 안 함 — " + reason;
-  else if (!added.length) autoRecordInfo = `마지막 기록 이후 예약일(매주 첫 거래일)이 아직 없습니다`;
+  else if (!added.length) autoRecordInfo = `마지막 기록 이후 새로 체결될 날이 아직 없습니다`;
 }
 
 /* ---------- ⚡ 오늘의 LOC 주문 ---------- */
@@ -2009,23 +2011,24 @@ function renderTodayCard() {
   const qty = resolveLocQty(plan.locPx, plan.defaultQty).qty;
   const lastX = ctx.hist[ctx.hist.length - 1].x;
   const nextSession = nextWeekday(lastX);
-  const isReserveDay = weekKey(nextSession.getTime()) !== weekKey(lastX);   // 다음 거래일이 새 주의 첫 거래일
+  const boughtThisWeek = valid.some(r => weekKey(r.t) === weekKey(nextSession.getTime()));
+  const isReserveDay = !boughtThisWeek;          // V0.22: 이번 주(다음 거래일이 속한 주)에 아직 안 샀으면 매일 LOC — 체결되면 다음 주까지 쉼
   const reached = refPrice <= plan.locPx;
   const dist = (plan.locPx / refPrice - 1) * 100;
   const amount = plan.locPx * qty;
   const krwTxt = (liveFx && liveFx.rate > 0) ? ` (${krw(amount * liveFx.rate)})` : "";
   const alert = isReserveDay
-    ? `<div class="cycle-alert first"><div class="ca-title">🔔 이번 주 LOC 예약일 — ${fmtMD(nextSession)} 장</div>
+    ? `<div class="cycle-alert first"><div class="ca-title">🔔 이번 주 LOC 대기 — ${fmtMD(nextSession)} 장</div>
         <div class="ca-body">지금 LOC 매수 예약을 걸어두세요 → <b>${usd(plan.locPx)} × ${qty}주</b></div>
-        <div class="ca-sub">종가가 ${usd(plan.locPx)} 이하로 마감하면 체결 · 미체결이면 다음 주 첫 거래일에 기준가를 다시 확인합니다</div></div>`
-    : `<div class="cycle-wait"><div class="cw-top"><span>🗓 다음 정기 예약일</span><b>${fmtMD(nextMonday(lastX))}</b></div>
-        <div class="cw-sub">평생매수는 <b>매주 첫 거래일</b>에 LOC를 겁니다. 그날이 되면 이 카드가 🔔 알림으로 바뀝니다${reached ? " · 다만 현재가가 이미 매수가 이하라 오늘 걸어도 체결 가능성이 있습니다" : ""}</div></div>`;
+        <div class="ca-sub">종가가 ${usd(plan.locPx)} 이하로 마감하면 체결 · 미체결이면 이번 주 남은 날에도 매일 다시 걸고, 체결되면 다음 주 월요일까지 쉽니다</div></div>`
+    : `<div class="cycle-wait"><div class="cw-top"><span>✅ 이번 주 매수 완료 · 다음 주문</span><b>${fmtMD(nextMonday(lastX))}</b></div>
+        <div class="cw-sub">평생매수는 <b>주 1회</b>만 삽니다(조건이 오는 날 LOC 체결). 다음 주 첫 거래일부터 다시 매일 LOC를 겁니다${reached ? " · 다만 현재가가 이미 매수가 이하라 오늘 걸어도 체결 가능성이 있습니다" : ""}</div></div>`;
   lastLocOrder = {
     schema: "loc-order/1", app: "QLD평생매수", version: APP_VERSION, release: RELEASE_DATE, symbol: "QLD",
     basis_close_date: fmtDateFull(lastX), generated_at: new Date().toISOString(),
     stage: `평생매수 · 하락 목표 -${plan.pct.toFixed(1)}%`, avg_price: null, holding_qty: valid.reduce((a, r) => a + r.qty, 0),
     orders: qty >= 1 ? [{ side: "buy", type: "LOC", price: Number(plan.locPx.toFixed(2)), qty: Math.floor(qty) }] : [],
-    /* V0.21: 메리츠 자동주문(QLD) 봇 검산용 — 매수가 = 기준가 × (1 − 하락목표%) 센트 내림 · 매주 첫 거래일에만 주문 · 매도 없음 */
+    /* V0.21: 메리츠 자동주문(QLD) 봇 검산용 — 매수가 = 기준가 × (1 − 하락목표%) 센트 내림 · 이번 주 아직 안 샀으면 매일 주문(주 1회) · 매도 없음 */
     bot: { kind: "lifetime", last_close: ctx.hist[ctx.hist.length - 1].y, ref_peak: plan.refPeak, pct: plan.pct, loc_px: Number(plan.locPx.toFixed(2)),
            qty_unit: LOC_LOT, order_today: !!isReserveDay, next_session: fmtDateFull(nextSession.getTime()), fx: (liveFx && liveFx.rate) || null,
            records_src: (typeof qldApiActive === "function" && qldApiActive()) ? "meritz" : "app" }
@@ -2183,7 +2186,7 @@ function locBuyBoxHtml(locPx, qty, defaultQty) {
   const calc = locCalcInfo(budgetDigits, locPx);
   return `
     <div class="loc-box buy" data-px="${locPx}" data-default="${defaultQty}">
-      <div class="loc-head"><span>📌 매주 월요일 · LOC 매수 예약</span></div>
+      <div class="loc-head"><span>📌 주 1회 · 체결될 때까지 매일 LOC</span></div>
       <div class="loc-budget">
         <div class="loc-budget-label"><span>최대 매수금액 (원화)</span><span class="loc-lot-badge">만원 · ${LOC_LOT}주 단위</span></div>
         <div class="loc-budget-wrap">
@@ -2696,7 +2699,7 @@ function applyViewMode() {
   }
   if (EMBED) return;
   const o = document.getElementById("pg-order");
-  if (o) o.insertAdjacentHTML("afterbegin", `<a class="solo-note" href="api.html">🔌 메리츠 자동주문(QLD) ›<small>매주 첫 거래일 LOC 매수를 메리츠 Open API로 자동 접수 · 계좌 현황 · 결과</small></a>`);
+  if (o) o.insertAdjacentHTML("afterbegin", `<a class="solo-note" href="api.html">🔌 메리츠 자동주문(QLD) ›<small>주 1회 LOC 매수(체결될 때까지 매일)를 메리츠 Open API로 자동 접수 · 계좌 현황 · 결과</small></a>`);
 }
 function initTabs() {
   document.querySelectorAll("#tabbar .tb").forEach(b => b.addEventListener("click", () => {
