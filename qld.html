@@ -8,9 +8,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<meta name="version" content="V1.01-261016-QLD-Lifetime-WeeklyOnce">
+<meta name="version" content="V1.02-261016-QLD-Lifetime-WeeklyOnce">
 <meta name="release-date" content="261016">
-<title>QLD 평생매수AI분석 (V1.01 - 261016)</title>
+<title>QLD 평생매수AI분석 (V1.02 - 261016)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
@@ -668,8 +668,8 @@
   </section>
   <a class="hub-link" href="./">🏠 허브로 · 홈 화면 앱 설치는 허브에서</a>
   <footer class="page-foot">
-  <button class="dl-btn" id="downloadSelfBtn" type="button">⬇ 이 파일 저장 (<span id="dlName">QLD평생매수AI분석_V1_01_261016.HTML</span>)</button>
-  <div style="margin-bottom:4px;">시스템 버전: <code id="footerVersion">V1.01 (261016)</code></div>
+  <button class="dl-btn" id="downloadSelfBtn" type="button">⬇ 이 파일 저장 (<span id="dlName">QLD평생매수AI분석_V1_02_261016.HTML</span>)</button>
+  <div style="margin-bottom:4px;">시스템 버전: <code id="footerVersion">V1.02 (261016)</code></div>
   </footer>
 
   </div>
@@ -942,7 +942,7 @@
 </nav>
 
 <script>
-const APP_VERSION = "V1.01";
+const APP_VERSION = "V1.02";
 const RELEASE_DATE = "261016";
 const FILE_NAME = `QLD평생매수AI분석_${APP_VERSION.replace(".", "_")}_${RELEASE_DATE}.HTML`;
 
@@ -2005,66 +2005,120 @@ function autoRecordWeeklyFills() {
 }
 
 
-/* ---------- 🤖 02 · AI ENGINE — QLD 시드 배분 (V1.01) ----------
-   ① 1·2·3차 가격 = 사다리와 같은 공식: 구간 고점 H × (1 − AI 하락목표)^k
-   ② 도달 확률 p_k = 과거 시세에서 '고점 대비 낙폭'이 그 차수 이상이었던 날의 비율 (최소 3%)
-   ③ 배분 w_k ∝ √p_k × (1 + 누적낙폭_k)  — 깊을수록 싸게 많이, 단 도달 가능성으로 보정 → 5% 단위, 합 100%
-   ④ 분할 n_k = round(6 × p_k / p_1) (최소 1) — 자주 오는 1차는 잘게, 드문 3차는 크게
-   ⑤ 이번 주 수량 = (시드 × w_k ÷ n_k) ÷ 매수가 · 남은 시드보다 크면 남은 시드 전부 · 반 회분 미만이 남으면 함께 소진 (시드 남기지 않음) */
-const SEED_KEY = "qldSeed_v1", SEED_DEF = 370000;
+/* ---------- 🤖 02 · AI ENGINE — QLD 시드 배분 (V1.02 · TQQQ 엔진과 같은 구조) ----------
+   차수 가격 = 구간 고점 H × (1 − AI 하락목표)^k (사다리와 같은 공식) · 매수 = 주 1회 LOC(종가 체결) · 체결가가 새 기준가
+   ① 규칙 기반: k = QLD 일간 σ ÷ 기준 σ 2.5% → 분할 n = round([6,3,1] × √k) · 배분 ∝ √도달확률 × (1+누적낙폭)
+   ② 백테스트 최적: 배분(10% 단위) × 분할 조합을 과거 시세로 평생매수 시뮬레이션 → 남은 현금은 수익 0%(시드 남기면 손해)
+      → 인접 조합 평균(견고성) 1위를 채택. 1회 금액 = 시드 × 배분 ÷ 분할 · 남은 시드가 반 회분 미만이면 함께 소진 */
+const SEED_KEY = "qldSeed_v1", SEED_DEF = 370000, SIG_BASE = 2.5;
 function seedGet() { try { const d = JSON.parse(localStorage.getItem(SEED_KEY) || "null"); return d && d.v > 0 ? d : null; } catch (e) { return null; } }
 const seedVal = () => (seedGet() || { v: SEED_DEF }).v;
+const seedMode = () => (seedGet() || {}).mode === "rule" ? "rule" : "opt";
 function seedSet(d, fromSync) { try { localStorage.setItem(SEED_KEY, JSON.stringify(d)); } catch (e) {} if (!fromSync && typeof syncSchedule === "function") syncSchedule(800); }
+function seedSim(ys, xs, q, w, n) {        // 평생매수 백테스트 (시드 1 기준) → 수익률 · 투입률
+  const cum = [1, 2, 3].map(k => 1 - Math.pow(1 - q, k)), per = w.map((x, i) => x / 100 / n[i]);
+  let cash = 1, sh = 0, H = ys[0], ref = ys[0], wk = -1;
+  for (let i = 1; i < ys.length; i++) {
+    const y = ys[i]; H = Math.max(H, y);
+    const k = Math.floor((xs[i] / 86400000 + 3) / 7);
+    if (cash > 1e-9 && k !== wk && y <= ref * (1 - q)) {
+      const d = 1 - y / H, t = d < cum[1] ? 0 : d < cum[2] ? 1 : 2;
+      let amt = Math.min(per[t], cash); if (cash - amt < per[t] * 0.5) amt = cash;
+      sh += amt / y; cash -= amt; ref = y; wk = k;
+    } else ref = Math.max(ref, y);
+  }
+  return { ret: sh * ys[ys.length - 1] + cash - 1, used: 1 - cash };
+}
+let __seedOpt = { key: "", res: null };
+function seedOptimize(ys, xs, q) {
+  const key = ys.length + ":" + ys[ys.length - 1] + ":" + q;
+  if (__seedOpt.key === key) return __seedOpt.res;
+  const W = [], N = [];
+  for (let a = 10; a <= 80; a += 10) for (let b = 10; a + b <= 90; b += 10) W.push([a, b, 100 - a - b]);
+  for (const a of [2, 3, 4, 6, 8, 10]) for (const b of [1, 2, 3, 4, 6]) for (const c of [1, 2, 3]) N.push([a, b, c]);
+  const all = [];
+  for (const w of W) for (const n of N) all.push({ w, n, ...seedSim(ys, xs, q, w, n) });
+  for (const r of all) {                   // 견고성 = 배분 ±10%p · 분할 같음 인접 평균
+    const nb = all.filter(o => o.n === r.n && Math.abs(o.w[0] - r.w[0]) <= 10 && Math.abs(o.w[1] - r.w[1]) <= 10);
+    r.rob = nb.reduce((t, o) => t + o.ret, 0) / nb.length;
+  }
+  all.sort((x, y) => y.rob - x.rob);
+  return (__seedOpt = { key, res: all }).res;
+}
 function seedEngine() {
   const ctx = guideCtx; if (!ctx || !ctx.hist || !ctx.hist.length) return null;
   const valid = guideResolveRecords(ctx.hist).filter(r => r.price !== null && r.qty > 0);
   const plan = computeGuidePlan(ctx, valid); if (!plan) return null;
-  const ys = ctx.hist.map(d => d.y), H = Math.max(...ys), q = plan.pct / 100, seed = seedVal();
-  let pk = ys[0]; const dd = ys.map(y => { pk = Math.max(pk, y); return 1 - y / pk; });
+  const L = (ctx.histLong && ctx.histLong.length > 30 ? ctx.histLong : ctx.hist), ys = L.map(d => d.y), xs = L.map(d => d.x);
+  const q = plan.pct / 100, seed = seedVal(), H = Math.max(...ctx.hist.map(d => d.y));
   const cum = [1, 2, 3].map(k => 1 - Math.pow(1 - q, k));
+  let pk = ys[0]; const dd = ys.map(y => { pk = Math.max(pk, y); return 1 - y / pk; });
   const prob = cum.map(c => Math.max(0.03, dd.filter(d => d >= c - 1e-9).length / dd.length));
-  const raw = cum.map((c, i) => Math.sqrt(prob[i]) * (1 + c)), sum = raw.reduce((a, b) => a + b, 0);
-  const w = raw.map(r => Math.round(r / sum * 20) * 5); w[2] = 100 - w[0] - w[1];
-  const n = prob.map(pr => Math.max(1, Math.round(6 * pr / prob[0])));
-  const px = cum.map(c => Math.floor(H * (1 - c) * 100) / 100);
-  const per = w.map((x, i) => seed * x / 100 / n[i]);
+  const rets = ys.slice(1).map((y, i) => Math.log(y / ys[i])), mu = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const sig = Math.sqrt(rets.reduce((a, b) => a + (b - mu) ** 2, 0) / rets.length) * 100, kk = sig / SIG_BASE;
+  const raw = cum.map((c, i) => Math.sqrt(prob[i]) * (1 + c)), rs = raw.reduce((a, b) => a + b, 0);
+  const rw = raw.map(r => Math.round(r / rs * 20) * 5); rw[2] = 100 - rw[0] - rw[1];
+  const rn = [6, 3, 1].map(b => Math.max(1, Math.round(b * Math.sqrt(kk))));
+  const rule = { w: rw, n: rn, ...seedSim(ys, xs, q, rw, rn) };
+  const top = seedOptimize(ys, xs, q), best = top[0];
+  const use = seedMode() === "rule" ? rule : best;
+  const w = use.w, n = use.n, px = cum.map(c => Math.floor(H * (1 - c) * 100) / 100), per = w.map((x, i) => seed * x / 100 / n[i]);
   const spent = valid.reduce((a, r) => a + r.price * r.qty, 0), remain = Math.max(0, seed - spent);
   const depth = 1 - plan.locPx / H, tier = depth < cum[1] - 1e-9 ? 0 : depth < cum[2] - 1e-9 ? 1 : 2;
-  let amt = Math.min(per[tier], remain);
-  if (remain - amt < per[tier] * 0.5) amt = remain;
-  const qty = Math.floor(amt / plan.locPx);
-  return { seed, H, cum, prob, w, n, px, per, spent, remain, tier, amt, qty, locPx: plan.locPx };
+  let amt = Math.min(per[tier], remain); if (remain - amt < per[tier] * 0.5) amt = remain;
+  return { seed, H, cum, prob, sig, kk, rule, best, top: top.filter((o, i, A) => A.findIndex(x => x.w.join() === o.w.join() && Math.abs(x.ret - o.ret) < 1e-9) === i).slice(0, 5), mode: seedMode(), w, n, px, per, spent, remain, tier, amt,
+           qty: Math.floor(amt / plan.locPx), locPx: plan.locPx, bars: ys.length };
 }
 function renderSeedCard() {
   const el = document.getElementById("seedContent"); if (!el) return;
   const E = seedEngine(); if (!E) return;
   const fx = (liveFx && liveFx.rate > 0) ? liveFx.rate : 0, k = v => fx ? ` <span style="color:var(--text-faint);font-size:11px;">(${krw(v * fx)})</span>` : "";
+  const pc = v => (v >= 0 ? "+" : "") + (v * 100).toFixed(2) + "%", wn = o => `${o.w.join("/")}% · ${o.n.join("/")}분할`;
+  const kpi = (l, v, c) => `<div class="tb-kpi"><div class="l">${l}</div><div class="v" ${c ? `style="color:${c}"` : ""}>${v}</div></div>`;
   const rows = [0, 1, 2].map(i => `<div class="rung ${i === E.tier ? "current" : ""}"><div class="rung-id">${i + 1}차</div>
       <div class="rung-body"><div class="rung-range">${usd(E.px[i])} 이하 · <b style="color:var(--glow);">${E.w[i]}%</b> = ${fmtUsd0(E.seed * E.w[i] / 100)}</div>
-      <div class="rung-note">${E.n[i]}분할 × ${fmtUsd0(E.per[i])} · 고점 대비 -${(E.cum[i] * 100).toFixed(1)}% · 도달확률 ${(E.prob[i] * 100).toFixed(0)}%</div></div>
+      <div class="rung-note">${E.n[i]}분할 × ${fmtUsd0(E.per[i])} · 고점 -${(E.cum[i] * 100).toFixed(1)}% · 도달확률 ${(E.prob[i] * 100).toFixed(0)}%</div></div>
       ${i === E.tier ? `<span class="now-flag">이번</span>` : ""}</div>`).join("");
   const used = E.seed > 0 ? Math.min(1, E.spent / E.seed) : 0;
+  const top = E.top.map((o, i) => `<tr><td>${i ? "" : "★ "}${o.w.join(" / ")}%</td><td>${o.n.join(" / ")}</td><td>${pc(o.ret)}</td><td>${pc(o.rob)}</td><td>${(o.used * 100).toFixed(0)}%</td></tr>`).join("");
   el.innerHTML = `
-    <div class="sched" style="display:flex;gap:8px;align-items:center;margin:0 0 10px;"><span style="font-weight:700;">전체 시드 $</span>
+    <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px;"><span style="font-weight:700;">전체 시드 $</span>
       <input type="text" id="seedInput" inputmode="numeric" value="${Math.round(E.seed).toLocaleString("en-US")}" style="flex:1;min-height:44px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);padding:0 10px;font-size:16px;">
       <button type="button" class="bk-btn" id="seedSave">저장</button></div>
-    <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">구간 고점 ${usd(E.H)} · 투입 ${fmtUsd0(E.spent)} / ${fmtUsd0(E.seed)} (${(used * 100).toFixed(1)}%) · 남은 시드 <b>${fmtUsd0(E.remain)}</b>${k(E.remain)}</div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">k = <b>${E.kk.toFixed(2)}</b> · QLD σ ${E.sig.toFixed(2)}% ÷ 기준σ ${SIG_BASE}% · 백테스트 ${E.bars}봉 · 주 1회 LOC</div>
+    <div class="sub-title"><span class="n">①</span>규칙 기반 환산</div>
+    <div class="tb-kpis">${kpi("배분 1/2/3차", E.rule.w.join("/") + "%")}${kpi("분할 ([6,3,1]×√k)", E.rule.n.join("/"))}${kpi("시드 대비 수익률", pc(E.rule.ret), "var(--glow)")}</div>
+    <div class="sub-title"><span class="n">②</span>백테스트 최적 (견고성)</div>
+    <div class="tb-kpis">${kpi("배분 1/2/3차", E.best.w.join("/") + "%")}${kpi("분할", E.best.n.join("/"))}${kpi("견고성 / 수익률", pc(E.best.rob) + " / " + pc(E.best.ret), "var(--glow)")}</div>
+    <div style="display:flex;gap:8px;margin:10px 0;">
+      <button type="button" class="bk-btn ${E.mode === "rule" ? "on" : ""}" data-seedmode="rule" style="flex:1">① 규칙${E.mode === "rule" ? " ✓ 적용 중" : " 적용"}</button>
+      <button type="button" class="bk-btn ${E.mode === "opt" ? "on" : ""}" data-seedmode="opt" style="flex:1">② 최적${E.mode === "opt" ? " ✓ 적용 중" : " 적용"}</button></div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">적용: ${wn(E)} · 투입 ${fmtUsd0(E.spent)} / ${fmtUsd0(E.seed)} (${(used * 100).toFixed(1)}%) · 남은 시드 <b>${fmtUsd0(E.remain)}</b>${k(E.remain)}</div>
     <div class="dist-track"><div class="dist-fill" style="width:${(used * 100).toFixed(1)}%;background:linear-gradient(90deg,#2BCDB8,var(--violet));"></div></div>
     <div class="ladder" style="margin-top:10px;">${rows}</div>
     <div class="hero-order" style="margin-top:10px;"><div class="ho-tag">이번 주 LOC (자동주문 수량)</div>
       <div class="ho-line"><span class="ho-price">${usd(E.locPx)}</span><span class="ho-x">×</span><span class="ho-qty">${E.qty}주</span></div>
-      <div style="font-size:12px;color:var(--text-dim);">${E.tier + 1}차 구간 · 1회 ${fmtUsd0(E.amt)}${k(E.amt)} ${E.amt >= E.remain - 0.01 && E.remain > 0 ? "· 남은 시드 전부" : ""}</div></div>
-    <div class="note">배분 = √도달확률 × (1+누적낙폭) 비례(깊을수록 크게) · 분할 = 6 × 도달확률/1차확률 · 시드는 남기지 않음(마지막 회차에 잔액 전부). 저장한 시드는 ☁️ 동기화로 모든 기기에 영구 보관되고, ⚡ 오늘의 LOC와 메리츠 자동주문(QLD)이 이 수량으로 주문합니다.</div>`;
+      <div style="font-size:12px;color:var(--text-dim);">${E.tier + 1}차 구간 · 1회 ${fmtUsd0(E.amt)}${k(E.amt)}${E.amt >= E.remain - 0.01 && E.remain > 0 ? " · 남은 시드 전부" : ""}</div></div>
+    <div style="font-size:12px;font-weight:700;margin:12px 0 4px;">견고성 상위 5개 조합 (시드 ${fmtUsd0(E.seed)} · 남은 현금 수익 0%)</div>
+    <div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;text-align:center;">
+      <tr style="color:var(--text-dim);"><th>배분 1/2/3차</th><th>분할</th><th>시드 대비 수익률</th><th>견고성(인접 평균)</th><th>투입률</th></tr>${top}</table></div>
+    <div class="note">저장한 시드·적용 방식은 ☁️ 동기화로 모든 기기에 영구 보관되고, ⚡ 오늘의 LOC와 메리츠 자동주문(QLD)이 이 수량으로 주문합니다. 백테스트는 과거 성과이며 미래를 보장하지 않습니다.</div>`;
 }
 document.addEventListener("click", e => {
-  if (!e.target || e.target.id !== "seedSave") return;
+  const t = e.target; if (!t) return;
+  if (t.dataset && t.dataset.seedmode) {
+    const d = seedGet() || { v: SEED_DEF };
+    seedSet({ ...d, mode: t.dataset.seedmode, at: new Date().toISOString() });
+    showCopyToast(t.dataset.seedmode === "rule" ? "① 규칙 기반 적용 · 모든 기기 동기화" : "② 백테스트 최적 적용 · 모든 기기 동기화", true);
+    if (guideCtx) renderGuideResult(); return;
+  }
+  if (t.id !== "seedSave") return;
   const v = Math.round(parseFloat(String(document.getElementById("seedInput").value).replace(/[^\d.]/g, "")));
   if (!(v >= 1000)) { showCopyToast("시드는 $1,000 이상으로 입력하세요", false); return; }
-  seedSet({ v, at: new Date().toISOString() });
+  seedSet({ ...(seedGet() || {}), v, at: new Date().toISOString() });
   showCopyToast(`전체 시드 ${fmtUsd0(v)} 저장 · 모든 기기 동기화`, true);
   if (guideCtx) renderGuideResult();
 });
-
 /* ---------- ⚡ 오늘의 LOC 주문 ---------- */
 let lastLocOrder = null;
 function renderTodayCard() {
@@ -3275,7 +3329,7 @@ async function syncNow(why) {
     const L = { records: st.records, skip: st.autoSkip || [], trades: loadTrades(), fed: parseJ(lsGet(SYNC_FED_KEY), []), tombs: meta.tombs, seed: seedGet() };
     const M = mergeDocs(L, R);
     M.seed = [L.seed, R.seed].filter(x => x && x.v > 0).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0] || null;
-    if (M.seed && (!L.seed || M.seed.at !== L.seed.at || M.seed.v !== L.seed.v)) { seedSet(M.seed, true); note = `다른 기기 시드 ${fmtUsd0(M.seed.v)} 반영`; try { if (guideCtx) renderGuideResult(); } catch (e) {} }
+    if (M.seed && (!L.seed || M.seed.at !== L.seed.at || M.seed.v !== L.seed.v || M.seed.mode !== L.seed.mode)) { seedSet(M.seed, true); note = `다른 기기 시드 ${fmtUsd0(M.seed.v)} 반영`; try { if (guideCtx) renderGuideResult(); } catch (e) {} }
     const apiNote = qldApiReconcile(M, g);        // V0.21 💼 메리츠 체결 → 매수 기록 (복원이 완전할 때만)
     const same = (a, b) => canon(a.records, recKeyOf) === canon(b.records, recKeyOf) && canon(a.trades, tradeKeyOf) === canon(b.trades, tradeKeyOf) && canon(a.fed, fedKeyOf) === canon(b.fed, fedKeyOf) && JSON.stringify([...(a.skip || [])].sort()) === JSON.stringify([...(b.skip || [])].sort());
     if (!same(M, L)) {
