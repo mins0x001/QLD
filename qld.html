@@ -8,9 +8,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<meta name="version" content="V1.02-261016-QLD-Lifetime-WeeklyOnce">
+<meta name="version" content="V1.03-261016-QLD-Lifetime-WeeklyOnce">
 <meta name="release-date" content="261016">
-<title>QLD 평생매수AI분석 (V1.02 - 261016)</title>
+<title>QLD 평생매수AI분석 (V1.03 - 261016)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
@@ -668,8 +668,8 @@
   </section>
   <a class="hub-link" href="./">🏠 허브로 · 홈 화면 앱 설치는 허브에서</a>
   <footer class="page-foot">
-  <button class="dl-btn" id="downloadSelfBtn" type="button">⬇ 이 파일 저장 (<span id="dlName">QLD평생매수AI분석_V1_02_261016.HTML</span>)</button>
-  <div style="margin-bottom:4px;">시스템 버전: <code id="footerVersion">V1.02 (261016)</code></div>
+  <button class="dl-btn" id="downloadSelfBtn" type="button">⬇ 이 파일 저장 (<span id="dlName">QLD평생매수AI분석_V1_03_261016.HTML</span>)</button>
+  <div style="margin-bottom:4px;">시스템 버전: <code id="footerVersion">V1.03 (261016)</code></div>
   </footer>
 
   </div>
@@ -942,7 +942,7 @@
 </nav>
 
 <script>
-const APP_VERSION = "V1.02";
+const APP_VERSION = "V1.03";
 const RELEASE_DATE = "261016";
 const FILE_NAME = `QLD평생매수AI분석_${APP_VERSION.replace(".", "_")}_${RELEASE_DATE}.HTML`;
 
@@ -1020,7 +1020,7 @@ async function fhFetch(endpoint, params = {}) {
   const url = new URL(`${FINNHUB_BASE_URL}${endpoint}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   url.searchParams.set("token", FINNHUB_API_KEY);
-  const res = await fetch(url.toString());
+  const res = await fetchRetry(url.toString());
   if (!res.ok) throw new Error(`HTTP 오류 (${res.status})`);
   const data = await res.json();
   if (data.error) throw new Error(data.error);
@@ -1039,7 +1039,7 @@ async function tdFetchTimeSeries(symbol, outputsize) {
   url.searchParams.set("interval", "1day");
   url.searchParams.set("outputsize", outputsize);
   url.searchParams.set("apikey", TWELVE_DATA_API_KEY);
-  const res = await fetch(url.toString());
+  const res = await fetchRetry(url.toString());
   if (!res.ok) throw new Error(`HTTP 오류 (${res.status})`);
   const data = await res.json();
   if (data.status === "error" || !data.values) {
@@ -1106,7 +1106,7 @@ async function avFetch(params) {
   const url = new URL(ALPHA_VANTAGE_BASE_URL);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   url.searchParams.set("apikey", ALPHA_VANTAGE_API_KEY);
-  const res = await fetch(url.toString());
+  const res = await fetchRetry(url.toString());
   if (!res.ok) throw new Error("네트워크 오류 (" + res.status + ")");
   const data = await res.json();
   if (data["Note"]) throw new Error("API 호출 한도 초과: " + data["Note"]);
@@ -2814,6 +2814,17 @@ function goTab(id, opts) {
   const y = (opts && opts.top) ? 0 : (__tabScroll[id] || 0);
   window.scrollTo({ top: y, behavior: "instant" });
 }
+
+/* 공통: 시세 재시도 */
+async function fetchRetry(u, opt) {        // 무료 시세 API 는 여러 앱이 동시에 부르면 한도(429)·순간 끊김으로 'Failed to fetch' — 1.5·4·8초 뒤 다시
+  let last;
+  for (const w of [0, 1500, 4000, 8000]) {
+    if (w) await new Promise(r => setTimeout(r, w));
+    try { const r = await fetch(u, opt); if (r.status !== 429) return r; last = new Error("요청 한도 초과(429)"); }
+    catch (e) { last = e; }
+  }
+  throw new Error((last && last.message) + " — 4번 시도 실패 (인터넷 연결 또는 시세 API 한도 · 1분 뒤 다시)");
+}
 const EMBED = (new URLSearchParams(location.search).get("embed") || "").toLowerCase();
 function applyViewMode() {
   if (EMBED === "panel") {
@@ -2824,6 +2835,8 @@ function applyViewMode() {
     return;
   }
   if (EMBED) return;
+  document.body.insertAdjacentHTML("afterbegin", '<a href="./" class="hub-top" style="position:fixed;top:10px;left:10px;z-index:99;padding:6px 12px;border-radius:999px;background:rgba(10,16,28,0.85);border:1px solid rgba(255,255,255,0.15);color:#cfe;font-size:13px;font-weight:700;text-decoration:none;">‹ 허브</a>');
+  setTimeout(() => { const b = document.getElementById("fetchBtn"); if (b && !b.disabled && typeof lastLocOrder !== "undefined" && !lastLocOrder) b.click(); }, 700);   // 열면 시세 자동 1회
   const o = document.getElementById("pg-order");
   if (o) o.insertAdjacentHTML("afterbegin", `<a class="solo-note" href="api.html">🔌 메리츠 자동주문(QLD) ›<small>주 1회 LOC 매수(체결될 때까지 매일)를 메리츠 Open API로 자동 접수 · 계좌 현황 · 결과</small></a>`);
 }
