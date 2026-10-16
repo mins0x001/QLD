@@ -8,9 +8,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<meta name="version" content="V1.00-261015-QLD-Lifetime-WeeklyOnce">
-<meta name="release-date" content="261015">
-<title>QLD 평생매수AI분석 (V1.00 - 261015)</title>
+<meta name="version" content="V1.01-261016-QLD-Lifetime-WeeklyOnce">
+<meta name="release-date" content="261016">
+<title>QLD 평생매수AI분석 (V1.01 - 261016)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
@@ -582,6 +582,13 @@
       <div class="empty"><span class="ico">⚡</span>상단 '시세 불러오기'를 누르면 이번 주 걸어 둘 LOC 매수가와 수량이 여기에 표시됩니다.</div>
     </div>
   </section>
+  <section class="card" id="card-seed" style="--c:var(--violet);">
+    <div class="card-head">
+      <div class="card-icon">🤖</div>
+      <div><div class="card-kicker">02 · AI ENGINE</div><h2>QLD 시드 배분 AI 엔진</h2></div>
+    </div>
+    <div id="seedContent"><div class="empty"><span class="ico">🤖</span>상단 '시세 불러오기'를 누르면 전체 시드를 1·2·3차에 나눈 최적 배분과 분할 매수 금액이 표시됩니다.</div></div>
+  </section>
   <section class="card" id="card-records" style="--c:var(--amber);">
     <div class="card-head">
       <div class="card-icon">📒</div>
@@ -661,8 +668,8 @@
   </section>
   <a class="hub-link" href="./">🏠 허브로 · 홈 화면 앱 설치는 허브에서</a>
   <footer class="page-foot">
-  <button class="dl-btn" id="downloadSelfBtn" type="button">⬇ 이 파일 저장 (<span id="dlName">QLD평생매수AI분석_V1_00_261015.HTML</span>)</button>
-  <div style="margin-bottom:4px;">시스템 버전: <code id="footerVersion">V1.00 (261015)</code></div>
+  <button class="dl-btn" id="downloadSelfBtn" type="button">⬇ 이 파일 저장 (<span id="dlName">QLD평생매수AI분석_V1_01_261016.HTML</span>)</button>
+  <div style="margin-bottom:4px;">시스템 버전: <code id="footerVersion">V1.01 (261016)</code></div>
   </footer>
 
   </div>
@@ -935,8 +942,8 @@
 </nav>
 
 <script>
-const APP_VERSION = "V1.00";
-const RELEASE_DATE = "261015";
+const APP_VERSION = "V1.01";
+const RELEASE_DATE = "261016";
 const FILE_NAME = `QLD평생매수AI분석_${APP_VERSION.replace(".", "_")}_${RELEASE_DATE}.HTML`;
 
 /* Finnhub: 실시간 시세(quote)만 사용 — 무료 티어에서 정상 동작 */
@@ -1997,6 +2004,67 @@ function autoRecordWeeklyFills() {
   else if (!added.length) autoRecordInfo = `마지막 기록 이후 새로 체결될 날이 아직 없습니다`;
 }
 
+
+/* ---------- 🤖 02 · AI ENGINE — QLD 시드 배분 (V1.01) ----------
+   ① 1·2·3차 가격 = 사다리와 같은 공식: 구간 고점 H × (1 − AI 하락목표)^k
+   ② 도달 확률 p_k = 과거 시세에서 '고점 대비 낙폭'이 그 차수 이상이었던 날의 비율 (최소 3%)
+   ③ 배분 w_k ∝ √p_k × (1 + 누적낙폭_k)  — 깊을수록 싸게 많이, 단 도달 가능성으로 보정 → 5% 단위, 합 100%
+   ④ 분할 n_k = round(6 × p_k / p_1) (최소 1) — 자주 오는 1차는 잘게, 드문 3차는 크게
+   ⑤ 이번 주 수량 = (시드 × w_k ÷ n_k) ÷ 매수가 · 남은 시드보다 크면 남은 시드 전부 · 반 회분 미만이 남으면 함께 소진 (시드 남기지 않음) */
+const SEED_KEY = "qldSeed_v1", SEED_DEF = 370000;
+function seedGet() { try { const d = JSON.parse(localStorage.getItem(SEED_KEY) || "null"); return d && d.v > 0 ? d : null; } catch (e) { return null; } }
+const seedVal = () => (seedGet() || { v: SEED_DEF }).v;
+function seedSet(d, fromSync) { try { localStorage.setItem(SEED_KEY, JSON.stringify(d)); } catch (e) {} if (!fromSync && typeof syncSchedule === "function") syncSchedule(800); }
+function seedEngine() {
+  const ctx = guideCtx; if (!ctx || !ctx.hist || !ctx.hist.length) return null;
+  const valid = guideResolveRecords(ctx.hist).filter(r => r.price !== null && r.qty > 0);
+  const plan = computeGuidePlan(ctx, valid); if (!plan) return null;
+  const ys = ctx.hist.map(d => d.y), H = Math.max(...ys), q = plan.pct / 100, seed = seedVal();
+  let pk = ys[0]; const dd = ys.map(y => { pk = Math.max(pk, y); return 1 - y / pk; });
+  const cum = [1, 2, 3].map(k => 1 - Math.pow(1 - q, k));
+  const prob = cum.map(c => Math.max(0.03, dd.filter(d => d >= c - 1e-9).length / dd.length));
+  const raw = cum.map((c, i) => Math.sqrt(prob[i]) * (1 + c)), sum = raw.reduce((a, b) => a + b, 0);
+  const w = raw.map(r => Math.round(r / sum * 20) * 5); w[2] = 100 - w[0] - w[1];
+  const n = prob.map(pr => Math.max(1, Math.round(6 * pr / prob[0])));
+  const px = cum.map(c => Math.floor(H * (1 - c) * 100) / 100);
+  const per = w.map((x, i) => seed * x / 100 / n[i]);
+  const spent = valid.reduce((a, r) => a + r.price * r.qty, 0), remain = Math.max(0, seed - spent);
+  const depth = 1 - plan.locPx / H, tier = depth < cum[1] - 1e-9 ? 0 : depth < cum[2] - 1e-9 ? 1 : 2;
+  let amt = Math.min(per[tier], remain);
+  if (remain - amt < per[tier] * 0.5) amt = remain;
+  const qty = Math.floor(amt / plan.locPx);
+  return { seed, H, cum, prob, w, n, px, per, spent, remain, tier, amt, qty, locPx: plan.locPx };
+}
+function renderSeedCard() {
+  const el = document.getElementById("seedContent"); if (!el) return;
+  const E = seedEngine(); if (!E) return;
+  const fx = (liveFx && liveFx.rate > 0) ? liveFx.rate : 0, k = v => fx ? ` <span style="color:var(--text-faint);font-size:11px;">(${krw(v * fx)})</span>` : "";
+  const rows = [0, 1, 2].map(i => `<div class="rung ${i === E.tier ? "current" : ""}"><div class="rung-id">${i + 1}차</div>
+      <div class="rung-body"><div class="rung-range">${usd(E.px[i])} 이하 · <b style="color:var(--glow);">${E.w[i]}%</b> = ${fmtUsd0(E.seed * E.w[i] / 100)}</div>
+      <div class="rung-note">${E.n[i]}분할 × ${fmtUsd0(E.per[i])} · 고점 대비 -${(E.cum[i] * 100).toFixed(1)}% · 도달확률 ${(E.prob[i] * 100).toFixed(0)}%</div></div>
+      ${i === E.tier ? `<span class="now-flag">이번</span>` : ""}</div>`).join("");
+  const used = E.seed > 0 ? Math.min(1, E.spent / E.seed) : 0;
+  el.innerHTML = `
+    <div class="sched" style="display:flex;gap:8px;align-items:center;margin:0 0 10px;"><span style="font-weight:700;">전체 시드 $</span>
+      <input type="text" id="seedInput" inputmode="numeric" value="${Math.round(E.seed).toLocaleString("en-US")}" style="flex:1;min-height:44px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);padding:0 10px;font-size:16px;">
+      <button type="button" class="bk-btn" id="seedSave">저장</button></div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">구간 고점 ${usd(E.H)} · 투입 ${fmtUsd0(E.spent)} / ${fmtUsd0(E.seed)} (${(used * 100).toFixed(1)}%) · 남은 시드 <b>${fmtUsd0(E.remain)}</b>${k(E.remain)}</div>
+    <div class="dist-track"><div class="dist-fill" style="width:${(used * 100).toFixed(1)}%;background:linear-gradient(90deg,#2BCDB8,var(--violet));"></div></div>
+    <div class="ladder" style="margin-top:10px;">${rows}</div>
+    <div class="hero-order" style="margin-top:10px;"><div class="ho-tag">이번 주 LOC (자동주문 수량)</div>
+      <div class="ho-line"><span class="ho-price">${usd(E.locPx)}</span><span class="ho-x">×</span><span class="ho-qty">${E.qty}주</span></div>
+      <div style="font-size:12px;color:var(--text-dim);">${E.tier + 1}차 구간 · 1회 ${fmtUsd0(E.amt)}${k(E.amt)} ${E.amt >= E.remain - 0.01 && E.remain > 0 ? "· 남은 시드 전부" : ""}</div></div>
+    <div class="note">배분 = √도달확률 × (1+누적낙폭) 비례(깊을수록 크게) · 분할 = 6 × 도달확률/1차확률 · 시드는 남기지 않음(마지막 회차에 잔액 전부). 저장한 시드는 ☁️ 동기화로 모든 기기에 영구 보관되고, ⚡ 오늘의 LOC와 메리츠 자동주문(QLD)이 이 수량으로 주문합니다.</div>`;
+}
+document.addEventListener("click", e => {
+  if (!e.target || e.target.id !== "seedSave") return;
+  const v = Math.round(parseFloat(String(document.getElementById("seedInput").value).replace(/[^\d.]/g, "")));
+  if (!(v >= 1000)) { showCopyToast("시드는 $1,000 이상으로 입력하세요", false); return; }
+  seedSet({ v, at: new Date().toISOString() });
+  showCopyToast(`전체 시드 ${fmtUsd0(v)} 저장 · 모든 기기 동기화`, true);
+  if (guideCtx) renderGuideResult();
+});
+
 /* ---------- ⚡ 오늘의 LOC 주문 ---------- */
 let lastLocOrder = null;
 function renderTodayCard() {
@@ -2031,9 +2099,11 @@ function renderTodayCard() {
     /* V0.21: 메리츠 자동주문(QLD) 봇 검산용 — 매수가 = 기준가 × (1 − 하락목표%) 센트 내림 · 이번 주 아직 안 샀으면 매일 주문(주 1회) · 매도 없음 */
     bot: { kind: "lifetime", last_close: ctx.hist[ctx.hist.length - 1].y, ref_peak: plan.refPeak, pct: plan.pct, loc_px: Number(plan.locPx.toFixed(2)),
            qty_unit: LOC_LOT, order_today: !!isReserveDay, next_session: fmtDateFull(nextSession.getTime()), fx: (liveFx && liveFx.rate) || null,
-           records_src: (typeof qldApiActive === "function" && qldApiActive()) ? "meritz" : "app" }
+           records_src: (typeof qldApiActive === "function" && qldApiActive()) ? "meritz" : "app",
+           engine_amt: (() => { const E = seedEngine(); return E ? Math.round(E.amt * 100) / 100 : null; })() }
   };
   document.title = (isReserveDay ? "🔔 " : "") + document.title.replace(/^🔔 /, "");
+  try { renderSeedCard(); } catch (e) {}
   el.innerHTML = `
     ${alert}
     <div class="hero-order">
@@ -2164,6 +2234,8 @@ function locQtyFromBudget(budgetKrw, px) {
   return { raw, qty: Math.floor(raw / LOC_LOT) * LOC_LOT };
 }
 function resolveLocQty(px, defaultQty) {
+  const E = seedEngine();
+  if (E && E.qty >= 1 && Math.abs(px - E.locPx) < 0.005) return { qty: E.qty, source: "engine" };
   const calc = locQtyFromBudget(parseFloat(guideState.locBudget), px);
   if (calc && calc.qty >= LOC_LOT) return { qty: calc.qty, source: "budget" };
   const custom = parseFloat(guideState.locQty);
@@ -3200,8 +3272,10 @@ async function syncNow(why) {
     const f = g.files && g.files[SYNC.file];
     const R = f && f.content ? parseJ(f.content, {}) : {};
     const meta = syncMeta(), st = guideLoadState();
-    const L = { records: st.records, skip: st.autoSkip || [], trades: loadTrades(), fed: parseJ(lsGet(SYNC_FED_KEY), []), tombs: meta.tombs };
+    const L = { records: st.records, skip: st.autoSkip || [], trades: loadTrades(), fed: parseJ(lsGet(SYNC_FED_KEY), []), tombs: meta.tombs, seed: seedGet() };
     const M = mergeDocs(L, R);
+    M.seed = [L.seed, R.seed].filter(x => x && x.v > 0).sort((a, b) => String(b.at).localeCompare(String(a.at)))[0] || null;
+    if (M.seed && (!L.seed || M.seed.at !== L.seed.at || M.seed.v !== L.seed.v)) { seedSet(M.seed, true); note = `다른 기기 시드 ${fmtUsd0(M.seed.v)} 반영`; try { if (guideCtx) renderGuideResult(); } catch (e) {} }
     const apiNote = qldApiReconcile(M, g);        // V0.21 💼 메리츠 체결 → 매수 기록 (복원이 완전할 때만)
     const same = (a, b) => canon(a.records, recKeyOf) === canon(b.records, recKeyOf) && canon(a.trades, tradeKeyOf) === canon(b.trades, tradeKeyOf) && canon(a.fed, fedKeyOf) === canon(b.fed, fedKeyOf) && JSON.stringify([...(a.skip || [])].sort()) === JSON.stringify([...(b.skip || [])].sort());
     if (!same(M, L)) {
@@ -3213,8 +3287,8 @@ async function syncNow(why) {
       note = dT ? `다른 기기 매도 기록 ${dT > 0 ? dT + "건 반영" : -dT + "건 삭제 반영"}` : dR > 0 ? `다른 기기 매수 기록 ${dR}건 추가됨` : dR < 0 ? `다른 기기에서 지운 ${-dR}건 반영` : "다른 기기 변경 반영";
       try { if (guideCtx) renderGuideResult(); else renderRecordsCard(); renderFedLog(); } catch (e) {}
     }
-    if (!same(M, R) || JSON.stringify(M.tombs) !== JSON.stringify(R.tombs || [])) {
-      const doc = { schema: "muhan-sync/1", app: "qld", version: APP_VERSION, updated: new Date().toISOString(), device: syncDevice(), records: M.records, skip: M.skip, trades: M.trades, fed: M.fed, tombs: M.tombs };
+    if (!same(M, R) || JSON.stringify(M.tombs) !== JSON.stringify(R.tombs || []) || JSON.stringify(M.seed || null) !== JSON.stringify(R.seed || null)) {
+      const doc = { schema: "muhan-sync/1", app: "qld", version: APP_VERSION, updated: new Date().toISOString(), device: syncDevice(), records: M.records, skip: M.skip, trades: M.trades, fed: M.fed, tombs: M.tombs, seed: M.seed || null };
       await gh("/gists/" + syncGist(), { method: "PATCH", body: JSON.stringify({ files: { [SYNC.file]: { content: JSON.stringify(doc) } } }) });
       if (!note) note = "이 기기 변경을 올렸습니다";
     }
